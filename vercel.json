@@ -1,6 +1,15 @@
 {
   "version": 2,
-  "name": "notes",
-  "builds": [{ "src": "app.js", "use": "@vercel/node" }],
-  "routes": [{ "src": "/(.*)", "dest": "/app.js" }]
+  "builds": [
+    {
+      "src": "app/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/app/(.*)",
+      "dest": "/app/$1"
+    }
+  ]
 }
