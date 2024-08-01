@@ -1,5 +1,27 @@
 const Note = require("../models/Notes");
 const mongoose = require("mongoose");
+const crypto = require('crypto');
+
+const key = crypto.randomBytes(32);
+const iv = crypto.randomBytes(16);
+
+function encrypt(text) {
+    let cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(key), iv);
+    let encrypted = cipher.update(text);
+    encrypted = Buffer.concat([encrypted, cipher.final()]);
+    return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decrypt(text) {
+    let textParts = text.split(':');
+    let iv = Buffer.from(textParts.shift(), 'hex');
+    let encryptedText = Buffer.from(textParts.join(':'), 'hex');
+    let decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(key), iv);
+    let decrypted = decipher.update(encryptedText);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    return decrypted.toString();
+}
+
 
 /**
  * GET /
@@ -59,12 +81,17 @@ exports.dashboard = async (req, res) => {
     .limit(perPage)
     .exec(); 
 
+    const decryptedNotes = notes.map(note => ({
+      ...note,
+      body: decrypt(note.body),
+  }));
+
     const count = await Note.countDocuments();
 
     res.render('dashboard/index', {
       userName: req.user.firstName,
       locals,
-      notes,
+      notes: decryptedNotes,
       layout: "../views/layouts/dashboard",
       current: page,
       pages: Math.ceil(count / perPage)
@@ -85,6 +112,7 @@ exports.dashboardViewNote=async(req,res)=>{
   .where({user: req.user.id }).lean();
   
   if(note){
+    note.body = decrypt(note.body);
     res.render('dashboard/view-notes',{
       noteID:req.params.id,
       note,
@@ -105,9 +133,10 @@ exports.dashboardViewNote=async(req,res)=>{
 exports.dashboardUpdateNote=async(req,res)=>{
   
   try {
+    const encryptedBody = encrypt(req.body.body);
     await Note.findOneAndUpdate(
       {_id:req.params.id},
-      {title:req.body.title, body: req.body.body,updatedAt:Date.now()}
+      {title:req.body.title, body: encryptedBody, updatedAt: Date.now() }
     ).where({user:req.user.id});
   
     res.redirect('/dashboard')
@@ -146,6 +175,7 @@ exports.dashboardAddNote = async(req,res)=>{
 exports.dashboardAddNoteSubmit = async(req,res)=>{
   try {
     req.body.user = req.user.id;
+    req.body.body = encrypt(req.body.body);
 
       await Note.create(req.body)
       res.redirect('/dashboard')
@@ -183,8 +213,13 @@ exports.dashboardSearchSubmit = async (req, res) => {
       ],
     }).where({ user: req.user.id });
 
+    const decryptedSearchResults = searchResults.map(note => ({
+      ...note,
+      body: decrypt(note.body),
+  }));
+
     res.render("dashboard/search", {
-      searchResults,
+       searchResults: decryptedSearchResults,
       layout: "../views/layouts/dashboard",
     });
   } catch (error) {
